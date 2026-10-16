@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FPE Interactivo - Cognitivismo y Constructivismo</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+  <style>
+    :root { --primary: #6c4ab6; --bg: #181824; --card: #ffffff; }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', system-ui, sans-serif; }
+    body { background: var(--bg); color: #fff; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+    header {
+      background: #232336; padding: 10px 20px; display: flex; justify-content: space-between;
+      align-items: center; border-bottom: 2px solid var(--primary);
+    }
+    .status-group { display: flex; gap: 12px; align-items: center; }
+    .badge { background: var(--primary); padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; font-weight: bold; }
+    .timer { background: #3b3b54; padding: 5px 12px; border-radius: 20px; font-size: 0.85rem; }
+    #viewer-container {
+      flex: 1; display: flex; justify-content: center; align-items: center;
+      position: relative; padding: 15px; overflow: hidden;
+    }
+    canvas {
+      max-width: 100%; max-height: 100%; border-radius: 8px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.6); background: #fff;
+    }
+    footer {
+      background: #232336; padding: 12px 24px; display: flex; justify-content: center;
+      align-items: center; gap: 15px;
+    }
+    button {
+      background: var(--primary); color: #fff; border: none; padding: 10px 20px;
+      border-radius: 6px; cursor: pointer; font-size: 1rem; font-weight: 600; transition: 0.2s;
+    }
+    button:hover:not(:disabled) { background: #8560d6; transform: translateY(-1px); }
+    button:disabled { background: #555; cursor: not-allowed; opacity: 0.6; }
+    .btn-secondary { background: #3b3b54; }
+    #start-overlay {
+      position: fixed; inset: 0; background: rgba(24,24,36,0.96);
+      display: flex; flex-direction: column; justify-content: center; align-items: center;
+      z-index: 100; text-align: center; padding: 20px;
+    }
+    #start-overlay h1 { margin-bottom: 10px; font-size: 2rem; }
+    #start-overlay p { margin-bottom: 25px; color: #ccc; max-width: 540px; line-height: 1.5; }
+    #quiz-modal {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.82);
+      display: none; justify-content: center; align-items: center; z-index: 50; padding: 20px;
+    }
+    .modal-card {
+      background: var(--card); color: #222; max-width: 580px; width: 100%;
+      padding: 25px; border-radius: 12px; box-shadow: 0 15px 40px rgba(0,0,0,0.5);
+    }
+    .modal-card h3 { color: var(--primary); margin-bottom: 10px; font-size: 1.25rem; }
+    .prof-quote { font-style: italic; color: #555; background: #f4f2f9; padding: 10px; border-left: 4px solid var(--primary); margin-bottom: 15px; border-radius: 4px; font-size: 0.95rem; }
+    .option-btn {
+      display: block; width: 100%; text-align: left; background: #f8f7fc; color: #222;
+      margin-bottom: 10px; padding: 12px 15px; border: 2px solid #e0d8f0; border-radius: 8px;
+      font-weight: 500;
+    }
+    .option-btn:hover { background: #e8e2f5; border-color: var(--primary); transform: none; }
+    #feedback { margin-top: 12px; font-weight: bold; min-height: 24px; line-height: 1.4; }
+    textarea { width: 100%; height: 90px; padding: 10px; margin-top: 10px; border-radius: 6px; border: 1px solid #ccc; }
+  </style>
+</head>
+<body>
+
+  <div id="start-overlay">
+    <h1>Cognitivismo y Constructivismo (FPE)</h1>
+    <p>Sesión interactiva guiada (Duración máxima: 10 minutos).<br>Incluye locución automática y pruebas de procesamiento cognitivo en vivo.</p>
+    <button onclick="iniciarPresentacion()">▶ Comenzar Clase Interactiva</button>
+  </div>
+
+  <header>
+    <div><strong>Apuntes de Aprendizaje FPE</strong> | Clase Automatizada</div>
+    <div class="status-group">
+      <div class="timer" id="timer-display">⏱ 00:00 / 10:00 máx</div>
+      <div class="badge" id="slide-counter">Diapositiva 1 / 8</div>
+    </div>
+  </header>
+
+  <div id="viewer-container">
+    <canvas id="pdf-canvas"></canvas>
+  </div>
+
+  <footer>
+    <button class="btn-secondary" id="btn-prev" onclick="cambiarPagina(-1)">⬅ Anterior</button>
+    <button class="btn-secondary" onclick="repetirAudio()">🔊 Repetir Explicación</button>
+    <button id="btn-next" onclick="intentarAvanzar()">Siguiente ➡</button>
+  </footer>
+
+  <div id="quiz-modal">
+    <div class="modal-card" id="modal-content"></div>
+  </div>
+
+  <audio id="audio-player"></audio>
+
+  <script>
+    const urlPDF = 'ppt_.pdf';
+    let pdfDoc = null;
+    let paginaActual = 1;
+    let totalPaginas = 8;
+    let preguntasSuperadas = {};
+    let segundosTranscurridos = 0;
+    const canvas = document.getElementById('pdf-canvas');
+    const ctx = canvas.getContext('2d');
+    const audioPlayer = document.getElementById('audio-player');
+
+    // Guiones con humor de profesor veterano
+    const guionesRespaldo = {
+      1: "Buenas tardes a todos. Pónganse cómodos y guarden el móvil, que nos conocemos y sé perfectamente que nadie mira su regazo sonriendo porque le apasione la pedagogía. Hoy vamos a desgranar los apuntes de Formación Profesional para el Empleo sobre Cognitivismo y Constructivismo del veinte de octubre de dos mil veintiséis. Prometo ser breve, indoloro y, con un poco de suerte, hasta útil.",
+      2: "Empecemos por el principio: ¿qué son el cognitivismo y el constructivismo? A ver, usted, el del fondo que asiente con tanta solemnidad... ¿Son corrientes filosóficas? ¿Que sí? Elemental, mi querido futuro docente: acaba usted de caer en la primera trampa del día con una elegancia digna de estudio. Pues no, no son filosofía. A diferencia de Kant, que trabajaba desde su sillón con ideas puras, lógica y reflexión profunda, estas son teorías psicológicas y pedagógicas nacidas de la ciencia. Aquí no venimos a divagar, sino a estudiar la mente y guiar las clases mediante experimentos y observaciones reales con alumnos de carne y hueso.",
+      3: "Hagamos un viaje rápido en el tiempo. Antes de mil novecientos cincuenta reinaba el Conductismo: premios, castigos y estímulo-respuesta sin considerar la mente; básicamente, el mismo método con el que se adiestra a un caniche, pero con tiza. En los años cincuenta, allá en Estados Unidos y de la mano de la informática, nace el Cognitivismo: descubrimos, oh sorpresa, que el alumno tiene cerebro y que procesa información como un ordenador. Entre el cincuenta y el setenta llega el Constructivismo: el aprendizaje activo donde el alumno construye su propio conocimiento desde la experiencia. Y tras mil novecientos ochenta, después de guerras y grandes transformaciones sociales, el mercado laboral dijo: basta de robots, necesitamos trabajadores autónomos y resolutivos.",
+      4: "Pongan a funcionar su memoria RAM ahora mismo porque les voy a hacer una prueba. Cuando enfrentamos Cognitivismo y Constructivismo, la diferencia es quirúrgica: en el cognitivismo, el cerebro procesa, almacena y recupera información. En el constructivismo, el alumno construye activamente su conocimiento desde la experiencia y el entorno. ¿Qué tienen en común? Que ambas superan por fin el conductismo; pero ojo al dato: mientras el cognitivismo enfatiza los procesos mentales internos, el constructivismo pone el foco en los procesos externos. Guarden esto en su disco duro mental, porque les voy a preguntar en tres, dos, uno...",
+      5: "Aquí tienen al quinteto titular de la pedagogía moderna. Primero, John Dewey: aprender haciendo, la escuela para la vida social. Segundo, Lev Vygotsky: constructivismo social y su famosa Zona de Desarrollo Próximo, que es ese empujoncito justo antes de que el alumno tire la toalla. Tercero, Jean Piaget: constructivismo cognitivo a base de asimilación y acomodación. Cuarto, Jerome Bruner: aprendizaje por descubrimiento, donde el docente deja de dar sermones y actúa como guía. Y quinto, David Ausubel: el aprendizaje significativo, es decir, conectar lo nuevo con lo que el alumno ya trae puesto de casa.",
+      6: "Si alguno quiere presumir en una cena pedagógica sin haberse leído los tomos enteros, apunte sus obras cumbre: de Dewey, Democracia y educación de mil novecientos dieciséis, y Experiencia y educación de mil novecientos treinta y ocho. De Vygotsky, Pensamiento y lenguaje; y de Piaget, El nacimiento de la inteligencia. Por último, Bruner nos dejó El proceso de la educación, y Ausubel su imprescindible Psicología educativa. Y sí, ya sé que en los retratos de la lámina parecen todos primos hermanos posando para un billete antiguo, pero les aseguro que sus ideas no tienen un pelo de anticuadas.",
+      7: "Vamos a lo que nos da de comer: ¿cómo bajamos estas teorías al barro de un aula de FPE? Con Dewey, resolvemos problemas del día a día: en Atención al Cliente montamos un mostrador simulado y un juego de rol con quejas reales. Con Vygotsky, aplicamos aprendizaje colaborativo en Programación Web trabajando en pareja con apoyo del docente. Con Piaget, transformamos la clase de Administración y Archivística en un laboratorio de exploración física y digital. Con Bruner, no damos respuestas masticadas: en Diseño Gráfico analizamos carteles publicitarios para que ellos mismos descubran las reglas. Y con Ausubel, actuamos como estrategas vinculando su experiencia previa, por ejemplo, armando un circuito con cruzamiento usando interruptores y una bombilla.",
+      8: "Y hasta aquí nuestra travesía. Como ven, hemos sobrevivido sin bajas. Muchas gracias por vuestra atención; ahora les toca a ustedes demostrar que ha habido aprendizaje significativo pulsando el botón para dejar su reflexión final."
+    };
+
+    const audiosInteractivosTexto = {
+      reto1: "Alto ahí. Antes de pasar de página, veamos si estaban escuchando o simplemente admirando el color violeta de la diapositiva. Respondan en pantalla.",
+      reto2: "Prueba de procesamiento cognitivo en tiempo real: su cerebro acaba de recibir la información, la ha almacenado en la memoria de trabajo y ahora toca recuperarla. ¿Cuál es la respuesta correcta?",
+      reto3: "Última prueba de fuego antes de graduarse. Imaginen que están mañana mismo en su aula de Formación Profesional para el Empleo. ¿A qué autor llamamos en este caso?",
+      bien: "¡Elemental! Su corteza prefrontal funciona a pleno rendimiento. Puede avanzar a la siguiente lámina.",
+      mal: "Casi... por no decir que ha disparado usted al aire con los ojos cerrados. Vuelva a leer las opciones con calma, que no cobramos por intento."
+    };
+
+    const cuestionarios = {
+      2: {
+        audioKey: "reto1",
+        citaProf: "«A ver si es verdad que no estamos en clase de filosofía de Kant...»",
+        pregunta: "¿Por qué afirmamos que el cognitivismo y el constructivismo NO son corrientes filosóficas?",
+        opciones: [
+          "Porque se limitan a reflexiones lógicas desde un sillón sin pisar el aula.",
+          "Porque nacen de la ciencia y se basan en experimentos y observaciones reales con alumnos.",
+          "Porque estudian únicamente premios y castigos sin considerar la mente."
+        ],
+        correcta: 1
+      },
+      4: {
+        audioKey: "reto2",
+        citaProf: "«Laboratorio Cognitivista en vivo: Procese, almacene y recupere de su memoria RAM lo que acabo de explicar.»",
+        pregunta: "Si comparamos cómo funcionan ambos enfoques al superar el conductismo, ¿cuál es la clave exacta?",
+        opciones: [
+          "El Cognitivismo procesa, almacena y recupera información (procesos internos), mientras el Constructivismo construye desde la experiencia y el entorno (procesos externos).",
+          "El Cognitivismo rechaza la informática de los años 50 y el Constructivismo memoriza datos.",
+          "Ambos ignoran la experiencia previa del alumno."
+        ],
+        correcta: 0
+      },
+      7: {
+        audioKey: "reto3",
+        citaProf: "«Bajemos al taller de FPE: demuestre que ha conectado esto con su práctica docente (Ausubel estaría orgulloso).»",
+        pregunta: "En un curso de FPE pedimos a los alumnos realizar un circuito con cruzamiento con interruptores y una bombilla vinculando su experiencia previa, y en otro analizar carteles de Diseño Gráfico para descubrir solos las reglas. ¿Qué dos autores aplicamos respectivamente?",
+        opciones: [
+          "John Dewey (mostrador simulado) y Lev Vygotsky (programación en pareja).",
+          "David Ausubel (experiencia previa/aprendizaje significativo) y Jerome Bruner (aprendizaje por descubrimiento).",
+          "Jean Piaget (laboratorio de archivística) y Immanuel Kant."
+        ],
+        correcta: 1
+      }
+    };
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    function iniciarPresentacion() {
+      document.getElementById('start-overlay').style.display = 'none';
+      iniciarReloj();
+      pdfjsLib.getDocument(urlPDF).promise.then(doc => {
+        pdfDoc = doc;
+        totalPaginas = doc.numPages;
+        mostrarPagina(paginaActual);
+      }).catch(() => {
+        alert("Coloca el archivo 'ppt_.pdf' en la misma carpeta que este index.html.");
+      });
+    }
+
+    function iniciarReloj() {
+      setInterval(() => {
+        segundosTranscurridos++;
+        const min = String(Math.floor(segundosTranscurridos / 60)).padStart(2, '0');
+        const seg = String(segundosTranscurridos % 60).padStart(2, '0');
+        document.getElementById('timer-display').innerText = `⏱ ${min}:${seg} / 10:00 máx`;
+      }, 1000);
+    }
+
+    function mostrarPagina(num) {
+      pdfDoc.getPage(num).then(page => {
+        const viewport = page.getViewport({ scale: 2.0 });
+        canvas.height = viewport.height;
+        canvas.width = viewport.width;
+        page.render({ canvasContext: ctx, viewport: viewport });
+      });
+
+      document.getElementById('slide-counter').innerText = `Diapositiva ${num} / ${totalPaginas}`;
+      document.getElementById('btn-prev').disabled = (num === 1);
+      document.getElementById('btn-next').innerText = (num === totalPaginas) ? "Compartir reflexión ✍" : "Siguiente ➡";
+
+      reproducirArchivoOVoz(`audio${num}.mp3`, guionesRespaldo[num]);
+    }
+
+    function reproducirArchivoOVoz(nombreArchivo, textoRespaldo) {
+      window.speechSynthesis.cancel();
+      audioPlayer.pause();
+      audioPlayer.src = nombreArchivo;
+      
+      audioPlayer.play().catch(() => {
+        if ('speechSynthesis' in window && textoRespaldo) {
+          const locucion = new SpeechSynthesisUtterance(textoRespaldo);
+          locucion.lang = 'es-ES';
+          locucion.rate = 1.03;
+          window.speechSynthesis.speak(locucion);
+        }
+      });
+    }
+
+    function repetirAudio() {
+      reproducirArchivoOVoz(`audio${paginaActual}.mp3`, guionesRespaldo[paginaActual]);
+    }
+
+    function intentarAvanzar() {
+      if (cuestionarios[paginaActual] && !preguntasSuperadas[paginaActual]) {
+        mostrarModalPregunta(paginaActual);
+        return;
+      }
+      if (paginaActual === totalPaginas) {
+        mostrarModalReflexion();
+        return;
+      }
+      cambiarPagina(1);
+    }
+
+    function cambiarPagina(delta) {
+      const nueva = paginaActual + delta;
+      if (nueva >= 1 && nueva <= totalPaginas) {
+        paginaActual = nueva;
+        mostrarPagina(paginaActual);
+      }
+    }
+
+    function mostrarModalPregunta(num) {
+      const q = cuestionarios[num];
+      const modal = document.getElementById('quiz-modal');
+      const content = document.getElementById('modal-content');
+      
+      reproducirArchivoOVoz(`audio_${q.audioKey}.mp3`, audiosInteractivosTexto[q.audioKey]);
+
+      let html = `
+        <h3>🧠 Control Cognitivo (Diapositiva ${num})</h3>
+        <div class="prof-quote">${q.citaProf}</div>
+        <p style="margin-bottom:15px; font-weight:600;">${q.pregunta}</p>
+      `;
+      q.opciones.forEach((op, idx) => {
+        html += `<button class="option-btn" onclick="verificarRespuesta(${num}, ${idx})">${op}</button>`;
+      });
+      html += `<div id="feedback"></div>`;
+      content.innerHTML = html;
+      modal.style.display = 'flex';
+    }
+
+    function verificarRespuesta(num, seleccion) {
+      const q = cuestionarios[num];
+      const fb = document.getElementById('feedback');
+      if (seleccion === q.correcta) {
+        fb.style.color = '#1e8e3e';
+        fb.innerText = '✅ ' + audiosInteractivosTexto.bien;
+        reproducirArchivoOVoz('audio_bien.mp3', audiosInteractivosTexto.bien);
+        preguntasSuperadas[num] = true;
+        setTimeout(() => {
+          document.getElementById('quiz-modal').style.display = 'none';
+          cambiarPagina(1);
+        }, 3800);
+      } else {
+        fb.style.color = '#d93025';
+        fb.innerText = '❌ ' + audiosInteractivosTexto.mal;
+        reproducirArchivoOVoz('audio_mal.mp3', audiosInteractivosTexto.mal);
+      }
+    }
+
+    function mostrarModalReflexion() {
+      const modal = document.getElementById('quiz-modal');
+      const content = document.getElementById('modal-content');
+      content.innerHTML = `
+        <h3>💬 Compartir reflexión / Seguir aprendiendo</h3>
+        <div class="prof-quote">«Demuestre que no ha estado aquí solo calentando el asiento: conecte lo aprendido con su propia especialidad.»</div>
+        <p>Elige uno de los 5 autores (Dewey, Vygotsky, Piaget, Bruner o Ausubel) y propón un ejemplo rápido para tus clases de FPE:</p>
+        <textarea id="texto-reflexion" placeholder="Escribe aquí tu caso práctico o reflexión..."></textarea>
+        <div style="margin-top:15px; display:flex; justify-content:flex-end; gap:10px;">
+          <button class="btn-secondary" onclick="document.getElementById('quiz-modal').style.display='none'">Volver</button>
+          <button onclick="guardarReflexion()">Enviar reflexión</button>
+        </div>
+      `;
+      modal.style.display = 'flex';
+    }
+
+    function guardarReflexion() {
+      const txt = document.getElementById('texto-reflexion').value.trim();
+      if (!txt) { alert("No me entregue la hoja en blanco, escriba aunque sea un par de líneas."); return; }
+      alert("¡Excelente aporte! Sesión completada dentro del tiempo estipulado.");
+      document.getElementById('quiz-modal').style.display = 'none';
+    }
+  </script>
+</body>
+</html>
